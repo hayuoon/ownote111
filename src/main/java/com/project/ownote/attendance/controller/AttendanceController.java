@@ -45,21 +45,29 @@ public class AttendanceController {
 
 
     @GetMapping("/list1")
-    public String listAllAttendances(Model model) {
+    public String listAllAttendances(Model model,HttpSession session) {
         List<Attendance> allAttendances = attendanceService.getAllAttendances();
+        if(allAttendances == null || allAttendances.isEmpty()) {
+            return "attendance/attendancelist";
+        }
         model.addAttribute("allAttendances", allAttendances);
 
-
+        AuthInfo authInfo = (AuthInfo) session.getAttribute("authInfo");
+        model.addAttribute("authInfo", authInfo);
         return "attendance/list";
     }
 
     @GetMapping("/edit")
-    public String edit(Model model, @RequestParam Long attendance_id) {
+    public String edit(Model model, @RequestParam Long attendance_id,HttpSession session) {
         Attendance attendance =  attendanceService.getAttendanceById(attendance_id);
         System.out.println("컨트롤러");
         System.out.println(attendance);
 //        List<Attendance> allAttendances = attendanceService.getAllAttendances();
        model.addAttribute("allAttendances", attendanceService.getAttendanceById(attendance_id));
+
+
+        AuthInfo authInfo = (AuthInfo) session.getAttribute("authInfo");
+        model.addAttribute("authInfo", authInfo);
         return "attendance/edit";
     }
 
@@ -67,7 +75,7 @@ public class AttendanceController {
 
 
     @PostMapping("/update")
-    public String update1(@ModelAttribute Dto dto) {
+    public String update1(@ModelAttribute Dto dto,HttpSession session,Model model) {
         // 입력 문자열
         String timeString = dto.getAtt_offtime();
         String timeString2 = dto.getAtt_ontime();
@@ -93,6 +101,9 @@ public class AttendanceController {
         attendanceService.updateAttendance(attendance);
 
 //        }
+
+        AuthInfo authInfo = (AuthInfo) session.getAttribute("authInfo");
+        model.addAttribute("authInfo", authInfo);
         return "redirect:/attendance/list1";
     }
 
@@ -101,62 +112,109 @@ public class AttendanceController {
 
 
     @GetMapping("/record")
-    public String recordAttendancePage(Model model) {
+    public String recordAttendancePage(Model model,HttpSession session) {
         model.addAttribute("attendance", new Attendance());
+        AuthInfo authInfo = (AuthInfo) session.getAttribute("authInfo");
+        model.addAttribute("authInfo", authInfo);
         return "attendance/attendance";
     }
 
     @GetMapping("/record/go")
-    public String recordAttendancePage(HttpSession session) {
+    public String recordAttendancePage(HttpSession session, Model model) {
         AuthInfo authInfo = (AuthInfo) session.getAttribute("authInfo");
         LocalDate currentDate = LocalDate.now();
         LocalTime currentTime = LocalTime.now();
-        Attendance attendance = new Attendance(0L,(long)authInfo.getEmp_num(), currentDate, currentTime, null, "출근", authInfo.getEmp_name(), authInfo.getGrade_name(), authInfo.getDept_name());
-        attendanceService.saveAttendance(attendance);
-        System.out.println("----------------------------"+currentDate);
-        System.out.println("----------------------------"+currentTime);
 
-        return "redirect:/ownote";
+        System.out.println("0000000000000000000000000000000000000000000000" + attendanceService.findByEmpNumAAndAtt_date((long) authInfo.getEmp_num(), currentDate));
+        if (!attendanceService.findByEmpNumAAndAtt_date((long) authInfo.getEmp_num(), currentDate).isEmpty()) {
+            System.out.println("##############################################################됨");
+            String alertMessage = "이미 출근 기록이 존재합니다";
+            model.addAttribute("alertMessage", alertMessage);
+            return "attendance/attendance";
+        } else {
+            // 현재 시간을 포맷팅하여 분까지만 나오도록 수정
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("HH:mm");
+            String currentTimeFormatted = currentTime.format(formatter);
 
+            Attendance attendance = new Attendance(0L, (long) authInfo.getEmp_num(), currentDate, currentTime, null, "출근", authInfo.getEmp_name(), authInfo.getGrade_name(), authInfo.getDept_name());
+
+
+            LocalTime localTime = LocalTime.parse(currentTimeFormatted, formatter);
+            attendanceService.getAttendanceById(attendance.getAttendance_id());
+            attendance.setAtt_ontime(localTime);
+
+
+            attendanceService.saveAttendance(attendance);
+            System.out.println("----------------------------" + currentDate);
+            System.out.println("----------------------------" + currentTime);
+            return "redirect:/";
+        }
     }
 
 
 
+
+
+
     @GetMapping("/record/leave")
-    public String recordAttendancePageP(HttpSession session) {
+    public String recordAttendancePageP(HttpSession session, Model model) {
         AuthInfo authInfo = (AuthInfo) session.getAttribute("authInfo");
         LocalDate currentDate = LocalDate.now();
         LocalTime currentTime = LocalTime.now();
         int emp_num = authInfo.getEmp_num();
 
-        List<Attendance> listAttendance = attendanceService.findByEmpNumAAndAtt_date((long)emp_num, currentDate);
-        Attendance attendance = listAttendance.get(0);
-        System.out.println(attendance);
-        attendance.setAtt_status("퇴근");
-        attendance.setAtt_offtime(currentTime);
-        attendanceService.updateAttendance(attendance);
-        System.out.println("----------------------------"+currentDate);
-        System.out.println("----------------------------"+currentTime);
+        if (attendanceService.findByEmpNumAAndAtt_date((long) authInfo.getEmp_num(), currentDate).get(0).getAtt_offtime() != null) {
+            System.out.println("##############################################################됨");
+            String alertMessage = "이미 퇴근 기록이 존재합니다";
+            model.addAttribute("alertMessage2", alertMessage);
+            return "attendance/attendance";
+        } else {
+            List<Attendance> listAttendance = attendanceService.findByEmpNumAAndAtt_date((long) emp_num, currentDate);
+            Attendance attendance = listAttendance.get(0);
+            System.out.println(attendance);
+            attendance.setAtt_status("퇴근");
+            attendance.setAtt_offtime(currentTime);
 
-        return "redirect:/ownote";
+            // Format the 퇴근시간 (leave time) to include minutes
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("HH:mm");
+            String formattedLeaveTime = currentTime.format(formatter);
+            attendance.setAtt_offtime(LocalTime.parse(formattedLeaveTime, formatter));
 
+            attendanceService.updateAttendance(attendance);
+
+            System.out.println("----------------------------" + currentDate);
+            System.out.println("----------------------------" + currentTime);
+
+            return "redirect:/";
+        }
     }
-
 
 
 
 
     @GetMapping("/search")
-    public  String search(Model model, @RequestParam Long emp_num){
-        List<Attendance> list = attendanceService.findByEmpNum(emp_num);
-        model.addAttribute("allAttendances", list);
-        return "attendance/list";
+    public  String search(Model model, @RequestParam(required = false, defaultValue = "0") Long emp_num,HttpSession session){
+       if(attendanceService.findByEmpNum(emp_num)==null || attendanceService.findByEmpNum(emp_num).isEmpty() || emp_num == 0L){
+           System.out.println("__________________________________" +emp_num);
+           String nullAlert = "존재하지 않습니다.";
+           model.addAttribute("nullAlert",nullAlert);
+           return "attendance/list";
+       } else {
+           List<Attendance> list = attendanceService.findByEmpNum(emp_num);
+           model.addAttribute("allAttendances", list);
+           AuthInfo authInfo = (AuthInfo) session.getAttribute("authInfo");
+           model.addAttribute("authInfo", authInfo);
+           return "attendance/list";
+       }
     }
 
 
     @GetMapping("/delete/{attendance_id}")
-    public String delete(@PathVariable Long attendance_id) {
+    public String delete(@PathVariable Long attendance_id,HttpSession session,Model model) {
+
         attendanceService.deleteById(attendance_id);
+        AuthInfo authInfo = (AuthInfo) session.getAttribute("authInfo");
+        model.addAttribute("authInfo", authInfo);
         return "redirect:/attendance/list1";
     }
 
